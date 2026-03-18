@@ -986,7 +986,10 @@ elif page == "🏢 CRE Lending":
             try:
                 url = f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={code}&cosd={start}"
                 headers = {"User-Agent": "Mozilla/5.0"}
-                df = pd.read_csv(url, parse_dates=[0], index_col=0, storage_options={"User-Agent": "Mozilla/5.0"} if hasattr(pd, 'read_csv') else {})
+                resp = requests.get(url, headers=headers, timeout=15)
+                resp.raise_for_status()
+                from io import StringIO
+                df = pd.read_csv(StringIO(resp.text), parse_dates=[0], index_col=0)
                 df.columns = [name]
                 df[name] = pd.to_numeric(df[name], errors="coerce")
                 frames[name] = df[name].dropna()
@@ -1099,7 +1102,7 @@ elif page == "🏢 CRE Lending":
         st.markdown("### Qualidade de Crédito CRE")
 
         if df_cre.empty:
-            st.info("⏳ Dados não carregados. Instale: `pip install pandas-datareader`")
+            st.info("⏳ Clique em \"Carregar dados CRE\" acima para visualizar.")
         else:
             # Métricas
             metrics_credit = [
@@ -1126,7 +1129,7 @@ elif page == "🏢 CRE Lending":
         st.markdown("### Taxas de Juros & Spreads")
 
         if df_cre.empty:
-            st.info("⏳ Dados não carregados. Instale: `pip install pandas-datareader`")
+            st.info("⏳ Clique em \"Carregar dados CRE\" acima para visualizar.")
         else:
             metrics_rates = [
                 ("30Y Mortgage Rate (%)", "Mortgage 30Y"),
@@ -1178,7 +1181,7 @@ elif page == "🏢 CRE Lending":
         st.markdown("### Indicadores do Mercado Imobiliário")
 
         if df_cre.empty:
-            st.info("⏳ Dados não carregados. Instale: `pip install pandas-datareader`")
+            st.info("⏳ Clique em \"Carregar dados CRE\" acima para visualizar.")
         else:
             for col_name in ["Case-Shiller US Home Price Index", "Housing Starts (thousands)", "Building Permits (thousands)", "CPI Shelter (%)"]:
                 fig = cre_chart(col_name, col_name, "#16a34a")
