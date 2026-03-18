@@ -959,78 +959,45 @@ elif page == "🏢 CRE Lending":
 
     @st.cache_data(ttl=7200, show_spinner=False)
     def get_fred_series(series_dict, start="2010-01-01"):
-        """Fetch FRED series. Tries pandas_datareader first, then CSV fallback."""
+        """Fetch FRED series via official API."""
         frames = {}
         errors = []
+        FRED_KEY = st.secrets["FRED_API_KEY"]
 
-        # Method 1: pandas_datareader (most reliable)
+        # Method 1: fredapi (official API — most reliable)
         try:
-            import pandas_datareader.data as web
-            from datetime import datetime as dt
-            start_dt = dt.strptime(start, "%Y-%m-%d")
+            from fredapi import Fred
+            fred = Fred(api_key=FRED_KEY)
             for name, code in series_dict.items():
                 try:
-                    df = web.DataReader(code, "fred", start_dt)
-                    frames[name] = df.iloc[:, 0]
+                    s = fred.get_series(code, observation_start=start)
+                    s.name = name
+                    frames[name] = s.dropna()
                 except Exception as e:
                     errors.append(f"{name}: {e}")
             if frames:
                 return pd.DataFrame(frames), errors
         except ImportError:
-            errors.append("pandas_datareader não instalado, tentando CSV...")
+            errors.append("fredapi não instalada, tentando API direta...")
 
-        # Method 2: FRED CSV (fallback)
+        # Method 2: FRED API via requests (no extra lib needed)
         for name, code in series_dict.items():
             if name in frames:
                 continue
             try:
-                url = f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={code}&cosd={start}"
-                headers = {"User-Agent": "Mozilla/5.0"}
-                resp = requests.get(url, headers=headers, timeout=15)
+                url = (f"https://api.stlouisfed.org/fred/series/observations"
+                       f"?series_id={code}&api_key={FRED_KEY}"
+                       f"&file_type=json&observation_start={start}")
+                resp = requests.get(url, timeout=20)
                 resp.raise_for_status()
-                from io import StringIO
-                df = pd.read_csv(StringIO(resp.text), parse_dates=[0], index_col=0)
-                df.columns = [name]
-                df[name] = pd.to_numeric(df[name], errors="coerce")
-                frames[name] = df[name].dropna()
+                data = resp.json()
+                obs = data.get("observations", [])
+                dates = [o["date"] for o in obs]
+                values = [float(o["value"]) if o["value"] != "." else float("nan") for o in obs]
+                s = pd.Series(values, index=pd.DatetimeIndex(dates), name=name).dropna()
+                frames[name] = s
             except Exception as e:
-                errors.append(f"{name} (CSV): {e}")
-
-        # Method 3: FRED text files (last resort)
-        for name, code in series_dict.items():
-            if name in frames:
-                continue
-            try:
-                url = f"https://fred.stlouisfed.org/data/{code}.txt"
-                resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
-                lines = resp.text.strip().split("\n")
-                # Find where data starts (after header lines)
-                data_start = 0
-                for i, line in enumerate(lines):
-                    if line.strip() and line[0].isdigit():
-                        data_start = i
-                        break
-                data_lines = lines[data_start:]
-                records = []
-                for line in data_lines:
-                    parts = line.strip().split()
-                    if len(parts) >= 2:
-                        try:
-                            date = pd.to_datetime(parts[0])
-                            val = float(parts[1]) if parts[1] != "." else float("nan")
-                            records.append((date, val))
-                        except (ValueError, IndexError):
-                            pass
-                if records:
-                    s = pd.Series(
-                        [r[1] for r in records],
-                        index=pd.DatetimeIndex([r[0] for r in records]),
-                        name=name,
-                    )
-                    s = s[s.index >= start]
-                    frames[name] = s.dropna()
-            except Exception as e:
-                errors.append(f"{name} (TXT): {e}")
+                errors.append(f"{name} (API): {e}")
 
         return pd.DataFrame(frames) if frames else pd.DataFrame(), errors
 
