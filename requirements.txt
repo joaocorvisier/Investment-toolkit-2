@@ -7,3 +7,4 @@ html5lib>=1.1
 feedparser>=6.0.0
 pandas-datareader>=0.10.0
 numpy>=1.24.0
+fredapi>=0.5.0
